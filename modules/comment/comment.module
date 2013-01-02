@@ -1567,7 +1567,7 @@ function comment_save($comment) {
 
       // Add the values which aren't passed into the function.
       $comment->thread = $thread;
-      $comment->hostname = ip_address();
+      // $comment->hostname = ip_address();
 
       drupal_write_record('comment', $comment);
 
