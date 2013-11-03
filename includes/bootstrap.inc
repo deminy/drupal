@@ -8,7 +8,7 @@
 /**
  * The current system version.
  */
-define('VERSION', '7.19-dev');
+define('VERSION', '7.24-dev');
 
 /**
  * Core API compatibility.
@@ -218,12 +218,16 @@ define('LANGUAGE_RTL', 1);
 define('REQUEST_TIME', (int) $_SERVER['REQUEST_TIME']);
 
 /**
- * Flag for drupal_set_title(); text is not sanitized, so run check_plain().
+ * Flag used to indicate that text is not sanitized, so run check_plain().
+ *
+ * @see drupal_set_title()
  */
 define('CHECK_PLAIN', 0);
 
 /**
- * Flag for drupal_set_title(); text has already been sanitized.
+ * Flag used to indicate that text has already been sanitized.
+ *
+ * @see drupal_set_title()
  */
 define('PASS_THROUGH', -1);
 
@@ -240,7 +244,7 @@ define('REGISTRY_WRITE_LOOKUP_CACHE', 2);
 /**
  * Regular expression to match PHP function names.
  *
- * @see http://php.net/manual/en/language.functions.php
+ * @see http://php.net/manual/language.functions.php
  */
 define('DRUPAL_PHP_FUNCTION_PATTERN', '[a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*');
 
@@ -274,7 +278,7 @@ define('DRUPAL_PHP_FUNCTION_PATTERN', '[a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*'
  * error, and $var will be populated with the contents of $object['foo'], but
  * that data will be passed by value, not reference. For more information on
  * the PHP limitation, see the note in the official PHP documentation at·
- * http://php.net/manual/en/arrayaccess.offsetget.php on
+ * http://php.net/manual/arrayaccess.offsetget.php on
  * ArrayAccess::offsetGet().
  *
  * By default, the class accounts for caches where calling functions might
@@ -380,11 +384,11 @@ abstract class DrupalCacheArray implements ArrayAccess {
    * without necessarily writing back to the persistent cache at the end.
    *
    * @param $offset
-   *   The array offset that was request.
+   *   The array offset that was requested.
    * @param $persist
    *   Optional boolean to specify whether the offset should be persisted or
    *   not, defaults to TRUE. When called with $persist = FALSE the offset will
-   *   be unflagged so that it will not written at the end of the request.
+   *   be unflagged so that it will not be written at the end of the request.
    */
   protected function persist($offset, $persist = TRUE) {
     $this->keysToPersist[$offset] = $persist;
@@ -791,7 +795,7 @@ function drupal_settings_initialize() {
  *
  * This function plays a key role in allowing Drupal's resources (modules
  * and themes) to be located in different places depending on a site's
- * configuration. For example, a module 'foo' may legally be be located
+ * configuration. For example, a module 'foo' may legally be located
  * in any of these three places:
  *
  * modules/foo/foo.module
@@ -802,7 +806,7 @@ function drupal_settings_initialize() {
  * the above, depending on where the module is located.
  *
  * @param $type
- *   The type of the item (i.e. theme, theme_engine, module, profile).
+ *   The type of the item (theme, theme_engine, module, profile).
  * @param $name
  *   The name of the item for which the filename is requested.
  * @param $filename
@@ -810,7 +814,7 @@ function drupal_settings_initialize() {
  *   than by consulting the database.
  *
  * @return
- *   The filename of the requested item.
+ *   The filename of the requested item or NULL if the item is not found.
  */
 function drupal_get_filename($type, $name, $filename = NULL) {
   // The location of files will not change during the request, so do not use
@@ -1212,7 +1216,7 @@ function drupal_send_headers($default_headers = array(), $only_default = FALSE) 
       header($_SERVER['SERVER_PROTOCOL'] . ' ' . $value);
     }
     // Skip headers that have been unset.
-    elseif ($value) {
+    elseif ($value !== FALSE) {
       header($header_names[$name_lower] . ': ' . $value);
     }
   }
@@ -1405,6 +1409,7 @@ function drupal_unpack($obj, $field = 'data') {
  * more information, including recommendations on how to break up or not
  * break up strings for translation.
  *
+ * @section sec_translating_vars Translating Variables
  * You should never use t() to translate variables, such as calling
  * @code t($text); @endcode, unless the text that the variable holds has been
  * passed through t() elsewhere (e.g., $text is one of several translated
@@ -1420,9 +1425,11 @@ function drupal_unpack($obj, $field = 'data') {
  * Basically, you can put variables like @name into your string, and t() will
  * substitute their sanitized values at translation time. (See the
  * Localization API pages referenced above and the documentation of
- * format_string() for details.) Translators can then rearrange the string as
- * necessary for the language (e.g., in Spanish, it might be "blog de @name").
+ * format_string() for details about how to define variables in your string.)
+ * Translators can then rearrange the string as necessary for the language
+ * (e.g., in Spanish, it might be "blog de @name").
  *
+ * @section sec_alt_funcs_install Use During Installation Phase
  * During the Drupal installation phase, some resources used by t() wil not be
  * available to code that needs localization. See st() and get_t() for
  * alternatives.
@@ -1492,8 +1499,9 @@ function t($string, array $args = array(), array $options = array()) {
  * page (especially text that may have come from untrusted users, since in that
  * case it prevents cross-site scripting and other security problems).
  *
- * In most cases, you should use t() rather than this function, since it will
- * translate the text (on non-English-only sites) in addition to formatting it.
+ * In most cases, you should use t() rather than calling this function
+ * directly, since it will translate the text (on non-English-only sites) in
+ * addition to formatting it.
  *
  * @param $string
  *   A string containing placeholders.
@@ -2231,6 +2239,19 @@ function drupal_get_user_timezone() {
 }
 
 /**
+ * Gets a salt useful for hardening against SQL injection.
+ *
+ * @return
+ *   A salt based on information in settings.php, not in the database.
+ */
+function drupal_get_hash_salt() {
+  global $drupal_hash_salt, $databases;
+  // If the $drupal_hash_salt variable is empty, a hash of the serialized
+  // database credentials is used as a fallback salt.
+  return empty($drupal_hash_salt) ? hash('sha256', serialize($databases)) : $drupal_hash_salt;
+}
+
+/**
  * Provides custom PHP error handling.
  *
  * @param $error_level
@@ -2450,7 +2471,6 @@ function drupal_get_bootstrap_phase() {
  *   HMAC and timestamp.
  */
 function drupal_valid_test_ua() {
-  global $drupal_hash_salt;
   // No reason to reset this.
   static $test_prefix;
 
@@ -2464,7 +2484,7 @@ function drupal_valid_test_ua() {
     // We use the salt from settings.php to make the HMAC key, since
     // the database is not yet initialized and we can't access any Drupal variables.
     // The file properties add more entropy not easily accessible to others.
-    $key = $drupal_hash_salt . filectime(__FILE__) . fileinode(__FILE__);
+    $key = drupal_get_hash_salt() . filectime(__FILE__) . fileinode(__FILE__);
     $time_diff = REQUEST_TIME - $time;
     // Since we are making a local request a 5 second time window is allowed,
     // and the HMAC must match.
@@ -2482,14 +2502,13 @@ function drupal_valid_test_ua() {
  * Generates a user agent string with a HMAC and timestamp for simpletest.
  */
 function drupal_generate_test_ua($prefix) {
-  global $drupal_hash_salt;
   static $key;
 
   if (!isset($key)) {
     // We use the salt from settings.php to make the HMAC key, since
     // the database is not yet initialized and we can't access any Drupal variables.
     // The file properties add more entropy not easily accessible to others.
-    $key = $drupal_hash_salt . filectime(__FILE__) . fileinode(__FILE__);
+    $key = drupal_get_hash_salt() . filectime(__FILE__) . fileinode(__FILE__);
   }
   // Generate a moderately secure HMAC based on the database credentials.
   $salt = uniqid('', TRUE);
@@ -3234,8 +3253,8 @@ function registry_update() {
  * However, the above line of code does not work, because PHP only allows static
  * variables to be initializied by literal values, and does not allow static
  * variables to be assigned to references.
- * - http://php.net/manual/en/language.variables.scope.php#language.variables.scope.static
- * - http://php.net/manual/en/language.variables.scope.php#language.variables.scope.references
+ * - http://php.net/manual/language.variables.scope.php#language.variables.scope.static
+ * - http://php.net/manual/language.variables.scope.php#language.variables.scope.references
  * The example below shows the syntax needed to work around both limitations.
  * For benchmarks and more information, see http://drupal.org/node/619666.
  *
@@ -3394,4 +3413,33 @@ function _drupal_shutdown_function() {
       print '<p>' . _drupal_render_exception_safe($exception) . '</p><hr />';
     }
   }
+}
+
+/**
+ * Compares the memory required for an operation to the available memory.
+ *
+ * @param $required
+ *   The memory required for the operation, expressed as a number of bytes with
+ *   optional SI or IEC binary unit prefix (e.g. 2, 3K, 5MB, 10G, 6GiB, 8bytes,
+ *   9mbytes).
+ * @param $memory_limit
+ *   (optional) The memory limit for the operation, expressed as a number of
+ *   bytes with optional SI or IEC binary unit prefix (e.g. 2, 3K, 5MB, 10G,
+ *   6GiB, 8bytes, 9mbytes). If no value is passed, the current PHP
+ *   memory_limit will be used. Defaults to NULL.
+ *
+ * @return
+ *   TRUE if there is sufficient memory to allow the operation, or FALSE
+ *   otherwise.
+ */
+function drupal_check_memory_limit($required, $memory_limit = NULL) {
+  if (!isset($memory_limit)) {
+    $memory_limit = ini_get('memory_limit');
+  }
+
+  // There is sufficient memory if:
+  // - No memory limit is set.
+  // - The memory limit is set to unlimited (-1).
+  // - The memory limit is greater than the memory required for the operation.
+  return ((!$memory_limit) || ($memory_limit == -1) || (parse_size($memory_limit) >= parse_size($required)));
 }

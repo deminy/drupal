@@ -281,7 +281,7 @@ function drupal_get_rdf_namespaces() {
 /**
  * Adds output to the HEAD tag of the HTML page.
  *
- * This function can be called as long the headers aren't sent. Pass no
+ * This function can be called as long as the headers aren't sent. Pass no
  * arguments (or NULL for both) to retrieve the currently stored elements.
  *
  * @param $data
@@ -641,7 +641,7 @@ function drupal_encode_path($path) {
 }
 
 /**
- * Sends the user to a different Drupal page.
+ * Sends the user to a different page.
  *
  * This issues an on-site HTTP redirect. The function makes sure the redirected
  * URL is formatted correctly.
@@ -785,6 +785,13 @@ function drupal_access_denied() {
  *   - data: A string containing the response body that was received.
  */
 function drupal_http_request($url, array $options = array()) {
+  // Allow an alternate HTTP client library to replace Drupal's default
+  // implementation.
+  $override_function = variable_get('drupal_http_request_function', FALSE);
+  if (!empty($override_function) && function_exists($override_function)) {
+    return $override_function($url, $options);
+  }
+
   $result = new stdClass();
 
   // Parse the URL and make sure we can handle the schema.
@@ -1127,7 +1134,7 @@ function _fix_gpc_magic(&$item) {
  * @param $key
  *   The key for the item within $_FILES.
  *
- * @see http://php.net/manual/en/features.file-upload.php#42280
+ * @see http://php.net/manual/features.file-upload.php#42280
  */
 function _fix_gpc_magic_files(&$item, $key) {
   if ($key != 'tmp_name') {
@@ -1943,7 +1950,7 @@ function format_interval($interval, $granularity = 2, $langcode = NULL) {
  *   get interpreted as date format characters.
  * @param $timezone
  *   (optional) Time zone identifier, as described at
- *   http://php.net/manual/en/timezones.php Defaults to the time zone used to
+ *   http://php.net/manual/timezones.php Defaults to the time zone used to
  *   display the page.
  * @param $langcode
  *   (optional) Language code to translate to. Defaults to the language used to
@@ -2078,6 +2085,9 @@ function _format_date_callback(array $matches = NULL, $new_langcode = NULL) {
 
 /**
  * Format a username.
+ *
+ * This is also the label callback implementation of
+ * callback_entity_info_label() for user_entity_info().
  *
  * By default, the passed-in object's 'name' property is used if it exists, or
  * else, the site-defined value for the 'anonymous' variable. However, a module
@@ -2788,7 +2798,7 @@ function drupal_set_time_limit($time_limit) {
  *   The name of the item for which the path is requested.
  *
  * @return
- *   The path to the requested item.
+ *   The path to the requested item or an empty string if the item is not found.
  */
 function drupal_get_path($type, $name) {
   return dirname(drupal_get_filename($type, $name));
@@ -3709,7 +3719,7 @@ function drupal_load_stylesheet_content($contents, $optimize = FALSE) {
     // Remove certain whitespace.
     // There are different conditions for removing leading and trailing
     // whitespace.
-    // @see http://php.net/manual/en/regexp.reference.subpatterns.php
+    // @see http://php.net/manual/regexp.reference.subpatterns.php
     $contents = preg_replace('<
       # Strip leading and trailing whitespace.
         \s*([@{};,])\s*
@@ -3878,7 +3888,16 @@ function drupal_html_id($id) {
       // requested id. $_POST['ajax_html_ids'] contains the ids as they were
       // returned by this function, potentially with the appended counter, so
       // we parse that to reconstruct the $seen_ids array.
-      foreach ($_POST['ajax_html_ids'] as $seen_id) {
+      if (isset($_POST['ajax_html_ids'][0]) && strpos($_POST['ajax_html_ids'][0], ',') === FALSE) {
+        $ajax_html_ids = $_POST['ajax_html_ids'];
+      }
+      else {
+        // jquery.form.js may send the server a comma-separated string as the
+        // first element of an array (see http://drupal.org/node/1575060), so
+        // we need to convert it to an array in that case.
+        $ajax_html_ids = explode(',', $_POST['ajax_html_ids'][0]);
+      }
+      foreach ($ajax_html_ids as $seen_id) {
         // We rely on '--' being used solely for separating a base id from the
         // counter, which this function ensures when returning an id.
         $parts = explode('--', $seen_id, 2);
@@ -5016,19 +5035,6 @@ function drupal_json_output($var = NULL) {
 }
 
 /**
- * Gets a salt useful for hardening against SQL injection.
- *
- * @return
- *   A salt based on information in settings.php, not in the database.
- */
-function drupal_get_hash_salt() {
-  global $drupal_hash_salt, $databases;
-  // If the $drupal_hash_salt variable is empty, a hash of the serialized
-  // database credentials is used as a fallback salt.
-  return empty($drupal_hash_salt) ? hash('sha256', serialize($databases)) : $drupal_hash_salt;
-}
-
-/**
  * Ensures the private key variable used to generate tokens is set.
  *
  * @return
@@ -5050,8 +5056,10 @@ function drupal_get_private_key() {
  *
  * @return string
  *   A 43-character URL-safe token for validation, based on the user session ID,
- *   the global $drupal_hash_salt variable from settings.php, and the
+ *   the hash salt provided from drupal_get_hash_salt(), and the
  *   'drupal_private_key' configuration variable.
+ *
+ * @see drupal_get_hash_salt()
  */
 function drupal_get_token($value = '') {
   return drupal_hmac_base64($value, session_id() . drupal_get_private_key() . drupal_get_hash_salt());
@@ -5143,7 +5151,7 @@ function _drupal_bootstrap_full() {
  * client without gzip support.
  *
  * Page compression requires the PHP zlib extension
- * (http://php.net/manual/en/ref.zlib.php).
+ * (http://php.net/manual/ref.zlib.php).
  *
  * @see drupal_page_header()
  */
@@ -5582,7 +5590,7 @@ function drupal_pre_render_link($element) {
  * @code
  * $node->content['links'] = array(
  *   '#theme' => 'links__node',
- *   '#pre_render' = array('drupal_pre_render_links'),
+ *   '#pre_render' => array('drupal_pre_render_links'),
  *   'comment' => array(
  *     '#theme' => 'links__node__comment',
  *     '#links' => array(
@@ -5787,23 +5795,23 @@ function drupal_render_page($page) {
  * array to be rendered independently and prevents them from being rendered
  * more than once on subsequent calls to drupal_render() (e.g., as part of a
  * larger array). If the same array or array element is passed more than once
- * to drupal_render(), it simply returns a NULL value.
+ * to drupal_render(), it simply returns an empty string.
  *
- * @param $elements
+ * @param array $elements
  *   The structured array describing the data to be rendered.
  *
- * @return
+ * @return string
  *   The rendered HTML.
  */
 function drupal_render(&$elements) {
   // Early-return nothing if user does not have access.
   if (empty($elements) || (isset($elements['#access']) && !$elements['#access'])) {
-    return;
+    return '';
   }
 
   // Do not print elements twice.
   if (!empty($elements['#printed'])) {
-    return;
+    return '';
   }
 
   // Try to fetch the element's markup from cache and return.
@@ -5839,7 +5847,7 @@ function drupal_render(&$elements) {
 
   // Allow #pre_render to abort rendering.
   if (!empty($elements['#printed'])) {
-    return;
+    return '';
   }
 
   // Get the children of the element, sorted by weight.
@@ -6459,6 +6467,44 @@ function element_set_attributes(array &$element, array $map) {
       $element['#attributes'][$attribute] = $element[$property];
     }
   }
+}
+
+/**
+ * Recursively computes the difference of arrays with additional index check.
+ *
+ * This is a version of array_diff_assoc() that supports multidimensional
+ * arrays.
+ *
+ * @param array $array1
+ *   The array to compare from.
+ * @param array $array2
+ *   The array to compare to.
+ *
+ * @return array
+ *   Returns an array containing all the values from array1 that are not present
+ *   in array2.
+ */
+function drupal_array_diff_assoc_recursive($array1, $array2) {
+  $difference = array();
+
+  foreach ($array1 as $key => $value) {
+    if (is_array($value)) {
+      if (!array_key_exists($key, $array2) || !is_array($array2[$key])) {
+        $difference[$key] = $value;
+      }
+      else {
+        $new_diff = drupal_array_diff_assoc_recursive($value, $array2[$key]);
+        if (!empty($new_diff)) {
+          $difference[$key] = $new_diff;
+        }
+      }
+    }
+    elseif (!array_key_exists($key, $array2) || $array2[$key] !== $value) {
+      $difference[$key] = $value;
+    }
+  }
+
+  return $difference;
 }
 
 /**
